@@ -1,13 +1,101 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no" />
+    <title>Aura Verde</title>
+    <style>
+      body { opacity: 1 !important; display: block !important; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      // Bloquear zoom y movimiento en iPad/iOS
+      document.addEventListener('gesturestart', function(e) {
+        e.preventDefault();
+      });
+      document.addEventListener('gesturechange', function(e) {
+        e.preventDefault();
+      });
+      document.addEventListener('gestureend', function(e) {
+        e.preventDefault();
+      });
+      
+      // Prevenir doble-tap zoom
+      let lastTouchEnd = 0;
+      document.addEventListener('touchend', function(e) {
+        const now = Date.now();
+        if (now - lastTouchEnd <= 300) {
+          e.preventDefault();
+        }
+        lastTouchEnd = now;
+      }, false);
+
+      // Control de Zoom Manual
+      function initZoomControl() {
+        const slider = document.getElementById('zoom-slider');
+        const zoomValue = document.getElementById('zoom-value');
+        const root = document.getElementById('root');
+        
+        if (!slider || !root) {
+          setTimeout(initZoomControl, 100);
+          return;
+        }
+        
+        // Cargar zoom guardado
+        const savedZoom = localStorage.getItem('appZoom') || '100';
+        slider.value = savedZoom;
+        applyZoom(savedZoom);
+        
+        function applyZoom(value) {
+          const zoomLevel = value / 100;
+          
+          // Aplicar zoom centrado
+          root.style.transform = 'scale(' + zoomLevel + ')';
+          root.style.transformOrigin = 'top center';
+          root.style.transition = 'transform 0.2s ease';
+          
+          // Ajustar ancho y centrado
+          if (zoomLevel !== 1) {
+            const newWidth = 100 / zoomLevel;
+            root.style.width = newWidth + '%';
+            root.style.marginLeft = ((100 - newWidth) / 2) + '%';
+            root.style.marginRight = ((100 - newWidth) / 2) + '%';
+          } else {
+            root.style.width = '100%';
+            root.style.marginLeft = '0';
+            root.style.marginRight = '0';
+          }
+          
+          // Prevenir scroll horizontal
+          document.body.style.overflowX = 'hidden';
+          
+          if (zoomValue) {
+            zoomValue.textContent = value + '%';
+          }
+          
+          // Actualizar gradient del slider
+          const percentage = ((value - 80) / (150 - 80)) * 100;
+          slider.style.background = 'linear-gradient(to right, #6EAA7F 0%, #6EAA7F ' + percentage + '%, #DDD ' + percentage + '%, #DDD 100%)';
+          
+          // Guardar en localStorage
+          localStorage.setItem('appZoom', value);
+        }
+        
+        slider.addEventListener('input', function() {
+          applyZoom(this.value);
+        });
+      }
+      
+      // Esperar a que el DOM esté listo
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initZoomControl);
+      } else {
+        initZoomControl();
+      }
+    </script>
   </body>
 </html>

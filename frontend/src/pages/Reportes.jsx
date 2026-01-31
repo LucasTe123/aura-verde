@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import logo from '../assets/imagen1.png';
+import ZoomControl from '../components/ZoomControl';
+
 
 const Reportes = () => {
   const navigate = useNavigate();
@@ -71,6 +73,10 @@ const Reportes = () => {
   return (
     <div className="container">
       <div className="card">
+        <ZoomControl />
+
+
+
         <div className="header">
           <img src={logo} alt="Aura Verde" className="logo-img" />
         </div>

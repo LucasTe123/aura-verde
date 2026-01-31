@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import logo from '../assets/imagen1.png';
 import Barcode from 'react-barcode';
+import imageCompression from 'browser-image-compression';
+
 
 const AnadirProducto = () => {
   const navigate = useNavigate();
@@ -19,10 +21,13 @@ const AnadirProducto = () => {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [notificacion, setNotificacion] = useState(null);
   const [imagenPreview, setImagenPreview] = useState(null);
+  const [imagenPublicId, setImagenPublicId] = useState(null);
+
 
   useEffect(() => {
     generarCodigoBarras();
   }, []);
+
 
   const generarCodigoBarras = () => {
     const timestamp = Date.now().toString();
@@ -35,10 +40,12 @@ const AnadirProducto = () => {
     }));
   };
 
+
   const mostrarNotificacion = (mensaje, tipo = 'success') => {
     setNotificacion({ mensaje, tipo });
     setTimeout(() => setNotificacion(null), 3000);
   };
+
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -48,20 +55,35 @@ const AnadirProducto = () => {
     }));
   };
 
-  // Subir imagen a Cloudinary CON COMPRESIÓN
+
+  // Subir imagen a Cloudinary CON COMPRESIÓN ANTES DE SUBIR
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     setUploadingImage(true);
     
-    const formDataImg = new FormData();
-    formDataImg.append('file', file);
-    formDataImg.append('upload_preset', 'aura_verde');
-    formDataImg.append('quality', 'auto:eco');
-    formDataImg.append('fetch_format', 'auto');
-    
     try {
+      // 🔥 COMPRIMIR ANTES DE SUBIR A CLOUDINARY
+      const options = {
+        maxSizeMB: 0.2,          // Máximo 200KB
+        maxWidthOrHeight: 1000,   // Máximo 1000px
+        useWebWorker: true,
+        fileType: 'image/jpeg'    // Convertir a JPEG
+      };
+      
+      console.log('📸 Tamaño original:', (file.size / 1024 / 1024).toFixed(2), 'MB');
+      
+      const compressedFile = await imageCompression(file, options);
+      
+      console.log('✅ Tamaño comprimido:', (compressedFile.size / 1024).toFixed(2), 'KB');
+      
+      // Subir el archivo YA COMPRIMIDO a Cloudinary
+      const formDataImg = new FormData();
+      formDataImg.append('file', compressedFile);  // ← Archivo comprimido
+      formDataImg.append('upload_preset', 'aura_verde');
+      formDataImg.append('folder', 'productos');
+      
       const response = await fetch(
         'https://api.cloudinary.com/v1_1/dntafqtp3/image/upload',
         {
@@ -72,16 +94,17 @@ const AnadirProducto = () => {
       
       const data = await response.json();
       
-      // Usar URL optimizada con transformaciones
-      const optimizedUrl = data.secure_url.replace('/upload/', '/upload/q_auto:eco,f_auto,w_800/');
+      setImagenPublicId(data.public_id);
+      console.log('Public ID guardado:', data.public_id);
       
       setFormData(prev => ({
         ...prev,
-        imagen_url: optimizedUrl
+        imagen_url: data.secure_url
       }));
       
-      setImagenPreview(optimizedUrl);
-      mostrarNotificacion('Imagen subida y optimizada correctamente');
+      setImagenPreview(data.secure_url);
+      mostrarNotificacion('Imagen comprimida y subida correctamente');
+      
     } catch (error) {
       console.error('Error al subir imagen:', error);
       mostrarNotificacion('Error al subir imagen', 'error');
@@ -89,6 +112,36 @@ const AnadirProducto = () => {
       setUploadingImage(false);
     }
   };
+
+
+  // Función para manejar cancelación y limpiar imagen huérfana
+  const handleCancelar = async () => {
+    // Si hay una imagen subida pero no guardada en BD, intentar eliminarla
+    if (imagenPublicId && formData.imagen_url) {
+      try {
+        console.log('Intentando eliminar imagen:', imagenPublicId);
+        
+        // Codificar el public_id para la URL (convierte "/" en "%2F")
+        const encodedPublicId = encodeURIComponent(imagenPublicId);
+        
+        const response = await fetch(`http://localhost:5000/api/productos/imagen/${encodedPublicId}`, {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        const result = await response.json();
+        console.log('Respuesta del servidor:', result);
+        console.log('Imagen limpiada al cancelar');
+      } catch (error) {
+        console.error('Error al limpiar imagen:', error);
+      }
+    }
+    
+    navigate('/');
+  };
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -106,12 +159,14 @@ const AnadirProducto = () => {
     }
   };
 
+
   return (
     <div className="container">
       <div className="card">
         <div className="header">
           <img src={logo} alt="Aura Verde" className="logo-img" />
         </div>
+
 
         <div className="nav-buttons">
           <button className="nav-btn" onClick={() => navigate('/')}>
@@ -125,7 +180,9 @@ const AnadirProducto = () => {
           </button>
         </div>
 
+
         <h2 className="section-title">AÑADIR PRODUCTO</h2>
+
 
         <form onSubmit={handleSubmit}>
           
@@ -160,7 +217,7 @@ const AnadirProducto = () => {
                 background: uploadingImage ? '#999' : '#6EAA7F'
               }}
             >
-              {uploadingImage ? 'SUBIENDO...' : 'SUBE TU IMAGEN'}
+              {uploadingImage ? 'COMPRIMIENDO Y SUBIENDO...' : 'SUBE TU IMAGEN'}
             </label>
             <input
               id="file-upload"
@@ -171,6 +228,7 @@ const AnadirProducto = () => {
               disabled={uploadingImage}
             />
           </div>
+
 
           <div className="form-group">
             <label className="form-label">Producto *</label>
@@ -184,6 +242,7 @@ const AnadirProducto = () => {
               placeholder="Nombre del producto"
             />
           </div>
+
 
           <div className="form-group">
             <label className="form-label">Cantidad *</label>
@@ -199,6 +258,7 @@ const AnadirProducto = () => {
               placeholder="0"
             />
           </div>
+
 
           <div className="form-group">
             <label className="form-label">Unidad *</label>
@@ -217,6 +277,7 @@ const AnadirProducto = () => {
             </select>
           </div>
 
+
           <div className="form-group">
             <label className="form-label">Precio (Bs) *</label>
             <input
@@ -231,6 +292,7 @@ const AnadirProducto = () => {
               placeholder="0.00"
             />
           </div>
+
 
           <div className="form-group">
             <label className="form-label"></label>
@@ -262,6 +324,7 @@ const AnadirProducto = () => {
             </button>
           </div>
 
+
           <div className="form-group">
             <label className="form-label">Categoría</label>
             <input
@@ -274,6 +337,7 @@ const AnadirProducto = () => {
             />
           </div>
 
+
           <button 
             type="submit" 
             className="btn-primary"
@@ -283,18 +347,21 @@ const AnadirProducto = () => {
             {loading ? 'GUARDANDO...' : 'GUARDAR PRODUCTO'}
           </button>
 
+
           <button 
             type="button" 
             className="btn-primary"
-            onClick={() => navigate('/')}
+            onClick={handleCancelar}
             disabled={loading}
             style={{ background: '#999' }}
           >
             CANCELAR
           </button>
 
+
         </form>
       </div>
+
 
       {notificacion && (
         <div className={`notification ${notificacion.tipo}`}>
@@ -304,5 +371,6 @@ const AnadirProducto = () => {
     </div>
   );
 };
+
 
 export default AnadirProducto;

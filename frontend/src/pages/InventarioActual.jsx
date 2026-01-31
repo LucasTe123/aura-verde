@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import logo from '../assets/imagen1.png';
 
+
+
 const InventarioActual = () => {
   const [productos, setProductos] = useState([]);
   const [productoAEliminar, setProductoAEliminar] = useState(null);
@@ -10,6 +12,7 @@ const InventarioActual = () => {
   const [notificacion, setNotificacion] = useState(null);
   const [mostrarConfirmacion, setMostrarConfirmacion] = useState(false);
   const navigate = useNavigate();
+
 
   const cargarProductos = async () => {
     try {
@@ -20,14 +23,17 @@ const InventarioActual = () => {
     }
   };
 
+
   useEffect(() => {
     cargarProductos();
   }, []);
+
 
   const mostrarNotificacion = (mensaje, tipo = 'success') => {
     setNotificacion({ mensaje, tipo });
     setTimeout(() => setNotificacion(null), 3000);
   };
+
 
   const handleEliminar = (producto, e) => {
     e.stopPropagation();
@@ -35,8 +41,10 @@ const InventarioActual = () => {
     setCantidadAEliminar('');
   };
 
+
   const confirmarEliminacion = async () => {
     if (!productoAEliminar) return;
+
 
     const cantidad = parseFloat(cantidadAEliminar);
     
@@ -44,6 +52,7 @@ const InventarioActual = () => {
       mostrarNotificacion('Por favor ingresa una cantidad válida', 'error');
       return;
     }
+
 
     if (cantidad >= productoAEliminar.cantidad) {
       setMostrarConfirmacion(true);
@@ -64,6 +73,7 @@ const InventarioActual = () => {
     }
   };
 
+
   const eliminarCompletamente = async () => {
     try {
       await api.deleteProducto(productoAEliminar.id);
@@ -77,12 +87,15 @@ const InventarioActual = () => {
     }
   };
 
+
   return (
     <div className="container">
       <div className="card">
+        
         <div className="header">
           <img src={logo} alt="Aura Verde" className="logo-img" />
         </div>
+
 
         <div className="nav-buttons">
           <button className="nav-btn active" onClick={() => navigate('/')}>
@@ -96,7 +109,9 @@ const InventarioActual = () => {
           </button>
         </div>
 
+
         <h2 className="section-title">INVENTARIO ACTUAL</h2>
+
 
         <div className="products-grid">
           {productos.map((producto) => (
@@ -127,8 +142,10 @@ const InventarioActual = () => {
           ))}
         </div>
 
+
         <button className="add-btn" onClick={() => navigate('/anadir')}>+</button>
       </div>
+
 
       {/* Notificación */}
       {notificacion && (
@@ -136,6 +153,7 @@ const InventarioActual = () => {
           {notificacion.tipo === 'success' ? '✓' : '⚠'} {notificacion.mensaje}
         </div>
       )}
+
 
       {/* Modal de eliminación */}
       {productoAEliminar && !mostrarConfirmacion && (
@@ -158,6 +176,7 @@ const InventarioActual = () => {
               />
             </div>
 
+
             <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
               <button 
                 className="btn-primary" 
@@ -177,6 +196,7 @@ const InventarioActual = () => {
           </div>
         </div>
       )}
+
 
       {/* Modal de confirmación final */}
       {mostrarConfirmacion && (
@@ -211,5 +231,6 @@ const InventarioActual = () => {
     </div>
   );
 };
+
 
 export default InventarioActual;

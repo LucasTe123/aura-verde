@@ -2,11 +2,14 @@ import axios from 'axios';
 
 const API_URL = 'http://192.168.0.20:5000/api';
 
-
 export const api = {
   getProductos: () => axios.get(`${API_URL}/productos`),
   getProductoById: (id) => axios.get(`${API_URL}/productos/${id}`),
   buscarPorCodigo: (codigo) => axios.get(`${API_URL}/productos/barcode/${codigo}`),
+  getProductoByBarcode: async (codigo) => {
+    const response = await axios.get(`${API_URL}/productos/barcode/${codigo}`);
+    return response.data;
+  },
   createProducto: (data) => axios.post(`${API_URL}/productos`, data),
   updateProducto: (id, data) => axios.put(`${API_URL}/productos/${id}`, data),
   deleteProducto: (id) => axios.delete(`${API_URL}/productos/${id}`),
