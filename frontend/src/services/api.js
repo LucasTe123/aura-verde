@@ -1,7 +1,8 @@
 import axios from 'axios';
 
 // Usar el proxy - ahora todas las peticiones van a /api
-const API_URL = '/api';
+const API_URL = 'https://aura-verde.onrender.com/api';
+
 
 export const api = {
   getProductos: () => axios.get(`${API_URL}/productos`),
