@@ -3,23 +3,29 @@ const Movimiento = require('../models/Movimiento');
 const NodeCache = require('node-cache');
 const cloudinary = require('cloudinary').v2;
 
-const cache = new NodeCache({ stdTTL: 60 }); // Cache de 60 segundos
+const cache = new NodeCache({ stdTTL: 60 });
 
-// Configuración de Cloudinary
 cloudinary.config({
   cloud_name: 'dntafqtp3',
   api_key: '714919128559335',
   api_secret: 'Kx5oc3Wox7hrsvPvhoIUt3g_Tyo'
 });
 
-// Función para extraer public_id de URL de Cloudinary
 const getPublicIdFromUrl = (url) => {
   if (!url || !url.includes('cloudinary')) return null;
   
   try {
     const parts = url.split('/');
-    const filename = parts[parts.length - 1];
-    const publicId = filename.split('.')[0];
+    const uploadIndex = parts.indexOf('upload');
+    
+    if (uploadIndex === -1) return null;
+    
+    const publicIdWithExtension = parts.slice(uploadIndex + 2).join('/');
+    const publicId = publicIdWithExtension.replace(/\.[^/.]+$/, '');
+    
+    console.log('📝 URL completa:', url);
+    console.log('📝 Public ID extraído:', publicId);
+    
     return publicId;
   } catch (error) {
     console.error('Error extrayendo public_id:', error);
@@ -81,9 +87,35 @@ exports.createProducto = async (req, res) => {
 exports.updateProducto = async (req, res) => {
   try {
     const productoAnterior = await Producto.getById(req.params.id);
+    
+    if (!productoAnterior) {
+      return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+    
+    if (req.body.imagen_url && 
+        productoAnterior.imagen_url && 
+        req.body.imagen_url !== productoAnterior.imagen_url) {
+      
+      console.log('🔄 Imagen cambiada, eliminando la anterior...');
+      console.log('   Anterior:', productoAnterior.imagen_url);
+      console.log('   Nueva:', req.body.imagen_url);
+      
+      const publicId = getPublicIdFromUrl(productoAnterior.imagen_url);
+      
+      if (publicId) {
+        try {
+          const result = await cloudinary.uploader.destroy(publicId, {
+            invalidate: true
+          });
+          console.log('✅ Imagen anterior eliminada:', result);
+        } catch (cloudinaryError) {
+          console.error('⚠️ Error eliminando imagen anterior:', cloudinaryError);
+        }
+      }
+    }
+    
     const producto = await Producto.update(req.params.id, req.body);
     
-    // Registrar movimiento si cambió la cantidad
     if (productoAnterior.cantidad !== req.body.cantidad) {
       await Movimiento.create({
         producto_id: req.params.id,
@@ -98,40 +130,40 @@ exports.updateProducto = async (req, res) => {
     cache.del('all_productos');
     res.json(producto);
   } catch (error) {
+    console.error('❌ Error en updateProducto:', error);
     res.status(500).json({ error: error.message });
   }
 };
 
 exports.deleteProducto = async (req, res) => {
   try {
-    // Primero obtener el producto para acceder a la URL de la imagen
     const producto = await Producto.getById(req.params.id);
     
     if (!producto) {
       return res.status(404).json({ error: 'Producto no encontrado' });
     }
     
-    // Si el producto tiene imagen, eliminarla de Cloudinary
     if (producto.imagen_url) {
       const publicId = getPublicIdFromUrl(producto.imagen_url);
       
       if (publicId) {
         try {
-          await cloudinary.uploader.destroy(publicId);
-          console.log('Imagen eliminada de Cloudinary:', publicId);
+          await cloudinary.uploader.destroy(publicId, {
+            invalidate: true
+          });
+          console.log('✅ Imagen eliminada de Cloudinary:', publicId);
         } catch (cloudinaryError) {
-          console.error('Error eliminando imagen de Cloudinary:', cloudinaryError);
-          // Continuar con la eliminación del producto aunque falle Cloudinary
+          console.error('⚠️ Error eliminando imagen de Cloudinary:', cloudinaryError);
         }
       }
     }
     
-    // Eliminar el producto de la base de datos
     await Producto.delete(req.params.id);
     cache.del('all_productos');
     
     res.json({ message: 'Producto eliminado correctamente' });
   } catch (error) {
+    console.error('❌ Error al eliminar producto:', error);
     res.status(500).json({ error: error.message });
   }
 };
@@ -144,7 +176,7 @@ exports.getInventarioBajo = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-// Función para eliminar imagen huérfana de Cloudinary
+
 exports.deleteImagenHuerfana = async (req, res) => {
   try {
     const { publicId } = req.params;
@@ -152,15 +184,32 @@ exports.deleteImagenHuerfana = async (req, res) => {
     
     console.log('🗑️ Eliminando imagen de Cloudinary:', decodedPublicId);
     
-    const result = await cloudinary.uploader.destroy(decodedPublicId);
+    const result = await cloudinary.uploader.destroy(decodedPublicId, {
+      invalidate: true
+    });
     
     console.log('✅ Resultado de Cloudinary:', result);
     
-    res.json({ 
-      success: true, 
-      message: 'Imagen eliminada correctamente',
-      result 
-    });
+    if (result.result === 'ok') {
+      res.json({ 
+        success: true, 
+        message: 'Imagen eliminada correctamente',
+        result 
+      });
+    } else if (result.result === 'not found') {
+      res.status(404).json({ 
+        success: false, 
+        message: 'Imagen no encontrada en Cloudinary. Verifica el public_id',
+        result,
+        publicId: decodedPublicId
+      });
+    } else {
+      res.status(400).json({ 
+        success: false, 
+        message: 'Error desconocido al eliminar',
+        result 
+      });
+    }
   } catch (error) {
     console.error('❌ Error al eliminar imagen:', error);
     res.status(500).json({ 
@@ -169,4 +218,3 @@ exports.deleteImagenHuerfana = async (req, res) => {
     });
   }
 };
-

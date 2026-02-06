@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const API_URL = 'http://192.168.0.20:5000/api';
+// Usar el proxy - ahora todas las peticiones van a /api
+const API_URL = '/api';
 
 export const api = {
   getProductos: () => axios.get(`${API_URL}/productos`),

@@ -1,33 +1,35 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { api } from '../services/api';
 import logo from '../assets/imagen1.png';
 import Barcode from 'react-barcode';
 import imageCompression from 'browser-image-compression';
 
-
 const AnadirProducto = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const productoEditar = location.state?.producto;
+  const esEdicion = !!productoEditar;
+
   const [formData, setFormData] = useState({
-    nombre: '',
-    cantidad: '',
-    unidad: 'kg',
-    precio: '',
-    codigo_barras: '',
-    imagen_url: '',
-    categoria: ''
+    nombre: productoEditar?.nombre || '',
+    cantidad: productoEditar?.cantidad || '',
+    unidad: productoEditar?.unidad || 'kg',
+    precio: productoEditar?.precio || '',
+    codigo_barras: productoEditar?.codigo_barras || '',
+    imagen_url: productoEditar?.imagen_url || '',
+    categoria: productoEditar?.categoria || ''
   });
   const [loading, setLoading] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [notificacion, setNotificacion] = useState(null);
-  const [imagenPreview, setImagenPreview] = useState(null);
-  const [imagenPublicId, setImagenPublicId] = useState(null);
-
+  const [imagenPreview, setImagenPreview] = useState(productoEditar?.imagen_url || null);
 
   useEffect(() => {
-    generarCodigoBarras();
+    if (!esEdicion) {
+      generarCodigoBarras();
+    }
   }, []);
-
 
   const generarCodigoBarras = () => {
     const timestamp = Date.now().toString();
@@ -40,12 +42,10 @@ const AnadirProducto = () => {
     }));
   };
 
-
   const mostrarNotificacion = (mensaje, tipo = 'success') => {
     setNotificacion({ mensaje, tipo });
     setTimeout(() => setNotificacion(null), 3000);
   };
-
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -55,8 +55,54 @@ const AnadirProducto = () => {
     }));
   };
 
+  const getPublicIdFromUrl = (url) => {
+    if (!url || !url.includes('cloudinary')) return null;
+    
+    try {
+      const parts = url.split('/');
+      const uploadIndex = parts.indexOf('upload');
+      
+      if (uploadIndex === -1) return null;
+      
+      const publicIdWithExtension = parts.slice(uploadIndex + 2).join('/');
+      const publicId = publicIdWithExtension.replace(/\.[^/.]+$/, '');
+      
+      return publicId;
+    } catch (error) {
+      console.error('Error extrayendo public_id:', error);
+      return null;
+    }
+  };
 
-  // Subir imagen a Cloudinary CON COMPRESIÓN ANTES DE SUBIR
+  const deleteImageFromCloudinary = async (url) => {
+    if (!url) return;
+    
+    try {
+      const publicId = getPublicIdFromUrl(url);
+      
+      if (!publicId) {
+        console.error('No se pudo extraer el public_id');
+        return;
+      }
+      
+      console.log('🗑️ Eliminando imagen con public_id:', publicId);
+      
+      const encodedPublicId = encodeURIComponent(publicId);
+      
+      const response = await fetch(`/api/productos/imagen/${encodedPublicId}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      const result = await response.json();
+      console.log('✅ Respuesta:', result);
+    } catch (error) {
+      console.error('❌ Error eliminando imagen:', error);
+    }
+  };
+
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -64,12 +110,11 @@ const AnadirProducto = () => {
     setUploadingImage(true);
     
     try {
-      // 🔥 COMPRIMIR ANTES DE SUBIR A CLOUDINARY
       const options = {
-        maxSizeMB: 0.2,          // Máximo 200KB
-        maxWidthOrHeight: 1000,   // Máximo 1000px
+        maxSizeMB: 0.2,
+        maxWidthOrHeight: 1000,
         useWebWorker: true,
-        fileType: 'image/jpeg'    // Convertir a JPEG
+        fileType: 'image/jpeg'
       };
       
       console.log('📸 Tamaño original:', (file.size / 1024 / 1024).toFixed(2), 'MB');
@@ -78,9 +123,9 @@ const AnadirProducto = () => {
       
       console.log('✅ Tamaño comprimido:', (compressedFile.size / 1024).toFixed(2), 'KB');
       
-      // Subir el archivo YA COMPRIMIDO a Cloudinary
+      // Subir nueva imagen (NO eliminar la anterior aquí)
       const formDataImg = new FormData();
-      formDataImg.append('file', compressedFile);  // ← Archivo comprimido
+      formDataImg.append('file', compressedFile);
       formDataImg.append('upload_preset', 'aura_verde');
       formDataImg.append('folder', 'productos');
       
@@ -94,8 +139,7 @@ const AnadirProducto = () => {
       
       const data = await response.json();
       
-      setImagenPublicId(data.public_id);
-      console.log('Public ID guardado:', data.public_id);
+      console.log('✅ Imagen subida. Public ID:', data.public_id);
       
       setFormData(prev => ({
         ...prev,
@@ -103,62 +147,53 @@ const AnadirProducto = () => {
       }));
       
       setImagenPreview(data.secure_url);
-      mostrarNotificacion('Imagen comprimida y subida correctamente');
+      mostrarNotificacion('✓ Imagen subida correctamente');
       
     } catch (error) {
       console.error('Error al subir imagen:', error);
-      mostrarNotificacion('Error al subir imagen', 'error');
+      mostrarNotificacion('⚠ Error al subir imagen', 'error');
     } finally {
       setUploadingImage(false);
     }
   };
 
-
-  // Función para manejar cancelación y limpiar imagen huérfana
   const handleCancelar = async () => {
-    // Si hay una imagen subida pero no guardada en BD, intentar eliminarla
-    if (imagenPublicId && formData.imagen_url) {
-      try {
-        console.log('Intentando eliminar imagen:', imagenPublicId);
-        
-        // Codificar el public_id para la URL (convierte "/" en "%2F")
-        const encodedPublicId = encodeURIComponent(imagenPublicId);
-        
-        const response = await fetch(`http://localhost:5000/api/productos/imagen/${encodedPublicId}`, {
-          method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        const result = await response.json();
-        console.log('Respuesta del servidor:', result);
-        console.log('Imagen limpiada al cancelar');
-      } catch (error) {
-        console.error('Error al limpiar imagen:', error);
-      }
+    // Si es EDICIÓN y cambió la imagen, eliminar la NUEVA (no la original)
+    if (esEdicion && formData.imagen_url !== productoEditar.imagen_url && formData.imagen_url) {
+      console.log('🗑️ Cancelando edición: Eliminando imagen nueva...');
+      await deleteImageFromCloudinary(formData.imagen_url);
+    }
+    
+    // Si es NUEVO producto y tiene imagen, eliminarla
+    if (!esEdicion && formData.imagen_url) {
+      console.log('🗑️ Cancelando: Eliminando imagen nueva...');
+      await deleteImageFromCloudinary(formData.imagen_url);
     }
     
     navigate('/');
   };
-
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     
     try {
-      await api.createProducto(formData);
-      mostrarNotificacion('Producto agregado exitosamente');
+      if (esEdicion) {
+        await api.updateProducto(productoEditar.id, formData);
+        mostrarNotificacion('✓ Producto actualizado correctamente');
+      } else {
+        await api.createProducto(formData);
+        mostrarNotificacion('✓ Producto agregado exitosamente');
+      }
+      
       setTimeout(() => navigate('/'), 1500);
     } catch (error) {
-      console.error('Error al agregar producto:', error);
-      mostrarNotificacion('Error al agregar el producto', 'error');
+      console.error('Error al guardar producto:', error);
+      mostrarNotificacion('⚠ Error al guardar el producto', 'error');
     } finally {
       setLoading(false);
     }
   };
-
 
   return (
     <div className="container">
@@ -167,10 +202,9 @@ const AnadirProducto = () => {
           <img src={logo} alt="Aura Verde" className="logo-img" />
         </div>
 
-
         <div className="nav-buttons">
           <button className="nav-btn" onClick={() => navigate('/')}>
-            INVENTARIO ACTUAL
+            INVENTARIO
           </button>
           <button className="nav-btn" onClick={() => navigate('/vender')}>
             VENDER
@@ -180,13 +214,29 @@ const AnadirProducto = () => {
           </button>
         </div>
 
-
-        <h2 className="section-title">AÑADIR PRODUCTO</h2>
-
+        <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+          <h2 style={{
+            fontSize: '24px',
+            fontWeight: '600',
+            letterSpacing: '4px',
+            color: '#333',
+            marginBottom: '0'
+          }}>
+            {esEdicion ? 'EDITAR PRODUCTO' : 'AÑADIR PRODUCTO'}
+          </h2>
+          <svg width="250" height="20" viewBox="0 0 250 20" style={{ display: 'block', margin: '0 auto' }}>
+            <path 
+              d="M 10 10 Q 125 2, 240 10" 
+              stroke="#6EAA7F" 
+              strokeWidth="3" 
+              fill="transparent"
+              strokeLinecap="round"
+            />
+          </svg>
+        </div>
 
         <form onSubmit={handleSubmit}>
           
-          {/* Subir Imagen */}
           <div className="form-group">
             <label className="form-label">Imagen del Producto</label>
             
@@ -217,7 +267,7 @@ const AnadirProducto = () => {
                 background: uploadingImage ? '#999' : '#6EAA7F'
               }}
             >
-              {uploadingImage ? 'COMPRIMIENDO Y SUBIENDO...' : 'SUBE TU IMAGEN'}
+              {uploadingImage ? 'COMPRIMIENDO Y SUBIENDO...' : (imagenPreview ? 'CAMBIAR IMAGEN' : 'SUBIR IMAGEN')}
             </label>
             <input
               id="file-upload"
@@ -228,7 +278,6 @@ const AnadirProducto = () => {
               disabled={uploadingImage}
             />
           </div>
-
 
           <div className="form-group">
             <label className="form-label">Producto *</label>
@@ -242,7 +291,6 @@ const AnadirProducto = () => {
               placeholder="Nombre del producto"
             />
           </div>
-
 
           <div className="form-group">
             <label className="form-label">Cantidad *</label>
@@ -258,7 +306,6 @@ const AnadirProducto = () => {
               placeholder="0"
             />
           </div>
-
 
           <div className="form-group">
             <label className="form-label">Unidad *</label>
@@ -277,7 +324,6 @@ const AnadirProducto = () => {
             </select>
           </div>
 
-
           <div className="form-group">
             <label className="form-label">Precio (Bs) *</label>
             <input
@@ -293,9 +339,8 @@ const AnadirProducto = () => {
             />
           </div>
 
-
           <div className="form-group">
-            <label className="form-label"></label>
+            <label className="form-label">Código de Barras</label>
             
             {formData.codigo_barras && (
               <div style={{ 
@@ -310,20 +355,21 @@ const AnadirProducto = () => {
               </div>
             )}
             
-            <button
-              type="button"
-              onClick={generarCodigoBarras}
-              className="btn-primary"
-              style={{ 
-                width: '100%',
-                background: '#6EAA7F',
-                marginTop: '5px'
-              }}
-            >
-            GENERAR CÓDIGO
-            </button>
+            {!esEdicion && (
+              <button
+                type="button"
+                onClick={generarCodigoBarras}
+                className="btn-primary"
+                style={{ 
+                  width: '100%',
+                  background: '#6EAA7F',
+                  marginTop: '5px'
+                }}
+              >
+                GENERAR CÓDIGO
+              </button>
+            )}
           </div>
-
 
           <div className="form-group">
             <label className="form-label">Categoría</label>
@@ -337,16 +383,14 @@ const AnadirProducto = () => {
             />
           </div>
 
-
           <button 
             type="submit" 
             className="btn-primary"
             disabled={loading || uploadingImage}
             style={{ marginBottom: '10px' }}
           >
-            {loading ? 'GUARDANDO...' : 'GUARDAR PRODUCTO'}
+            {loading ? 'GUARDANDO...' : (esEdicion ? 'ACTUALIZAR PRODUCTO' : 'GUARDAR PRODUCTO')}
           </button>
-
 
           <button 
             type="button" 
@@ -358,10 +402,8 @@ const AnadirProducto = () => {
             CANCELAR
           </button>
 
-
         </form>
       </div>
-
 
       {notificacion && (
         <div className={`notification ${notificacion.tipo}`}>
@@ -371,6 +413,5 @@ const AnadirProducto = () => {
     </div>
   );
 };
-
 
 export default AnadirProducto;
